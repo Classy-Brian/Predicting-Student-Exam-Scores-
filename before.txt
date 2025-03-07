@@ -1,0 +1,98 @@
+import pandas as pd
+import missingno as msno
+import matplotlib.pyplot as plt
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_squared_error
+from sklearn.preprocessing import StandardScaler
+
+# --- (Your existing code for loading, inspecting, and imputing) ---
+dataframe = pd.read_csv('Expanded_data_with_more_features.csv')
+dataframe['NrSiblings'].fillna(dataframe['NrSiblings'].median(), inplace=True)
+categorical_cols = dataframe.select_dtypes(include='object').columns
+for col in categorical_cols:
+    dataframe[col].fillna('Unknown', inplace=True)
+df_encoded = pd.get_dummies(dataframe, drop_first=True ,dtype='uint8')
+df_encoded['NrSiblings'] = df_encoded['NrSiblings'].astype('uint8')
+# --- (End of your existing code) ---
+
+# 1. Feature Selection (CHOOSE YOUR COLUMNS!)
+features = [
+    'WklyStudyHours_< 5',
+    'WklyStudyHours_> 10',
+    'WklyStudyHours_Unknown',
+    'NrSiblings',
+    'Gender_male',
+    "ParentEduc_bachelor's degree",  # Include some parent education
+    "ParentEduc_master's degree",
+    'PracticeSport_regularly',       # Include sports participation
+    'PracticeSport_sometimes',
+    'TestPrep_completed'           #Include Test Prep
+]
+target = 'MathScore'
+
+X = df_encoded[features]
+y = df_encoded[target]
+
+# 2. Train-Test Split
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# 3. Scaling (Standardization)
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+
+# 4. Model Training
+model = LinearRegression()
+model.fit(X_train_scaled, y_train)
+
+# 5. Model Evaluation
+y_pred = model.predict(X_test_scaled)
+mse = mean_squared_error(y_test, y_pred)
+print(f'Mean Squared Error: {mse}')
+
+# 6. Visualization
+
+# --- (Visualization - Bar Chart Remains Mostly the Same) ---
+plt.figure(figsize=(10, 6))
+bar_width = 0.35
+index = np.arange(len(y_test[:20]))  # Show first 20
+
+plt.bar(index, y_test[:20], bar_width, label='Actual', color='blue')
+plt.bar(index + bar_width, y_pred[:20], bar_width, label='Predicted', color='red')
+
+plt.xlabel('Student Index')
+plt.ylabel('Math Score')
+plt.title('Comparison of Actual vs. Predicted Math Scores (First 20 Students)')
+plt.xticks(index + bar_width / 2, range(1, 21))
+plt.legend()
+plt.tight_layout()
+plt.show()
+
+
+# --- (Visualization - Scatter Plot - Modified for Categorical Study Hours) ---
+# Since WklyStudyHours is now categorical, we can't do a simple scatter plot.
+# Instead, we'll use a box plot to show the distribution of MathScore for each study hours category.
+
+# Combine the study hours categories back into a single column for plotting
+X_train_plotting = X_train.copy()  # Work on a copy to avoid modifying the original
+X_train_plotting['StudyHours'] = '5-10'  # Default to the dropped category
+X_train_plotting.loc[X_train_plotting['WklyStudyHours_< 5'] == 1, 'StudyHours'] = '< 5'
+X_train_plotting.loc[X_train_plotting['WklyStudyHours_> 10'] == 1, 'StudyHours'] = '> 10'
+X_train_plotting.loc[X_train_plotting['WklyStudyHours_Unknown'] == 1, 'StudyHours'] = 'Unknown'
+
+# Create the box plot
+plt.figure(figsize=(8, 6))
+plt.boxplot([y_train[X_train_plotting['StudyHours'] == cat] for cat in ['< 5', '5-10', '> 10', 'Unknown']],
+            labels=['< 5', '5-10', '> 10', 'Unknown'])
+plt.xlabel('Weekly Study Hours')
+plt.ylabel('Math Score')
+plt.title('Distribution of Math Scores by Weekly Study Hours')
+plt.show()
+# 7. Print Coefficients and Intercept
+print("Coefficients:", model.coef_)
+print("Intercept:", model.intercept_)
+# Print coefficient interpretation
+for i, feature in enumerate(features):
+    print(f"For every unit increase in {feature}, MathScore changes by: {model.coef_[i]:.2f}")

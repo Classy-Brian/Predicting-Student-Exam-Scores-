@@ -1,0 +1,81 @@
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.linear_model import Ridge  # Using Ridge as an example, try Lasso/ElasticNet too
+from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.preprocessing import StandardScaler, PolynomialFeatures
+import matplotlib.pyplot as plt
+
+# --- (Your existing code for loading and imputing) ---
+dataframe = pd.read_csv('Expanded_data_with_more_features.csv')
+dataframe['NrSiblings'].fillna(dataframe['NrSiblings'].median(), inplace=True)
+categorical_cols = dataframe.select_dtypes(include='object').columns
+for col in categorical_cols:
+    dataframe[col].fillna('Unknown', inplace=True)
+df_encoded = pd.get_dummies(dataframe, drop_first=True ,dtype='uint8')
+df_encoded['NrSiblings'] = df_encoded['NrSiblings'].astype('uint8')
+
+# --- (End of your existing code) ---
+
+# 1. Feature Engineering and Selection (Comprehensive)
+features = [col for col in df_encoded.columns if col != 'MathScore']  # Include *all* columns except the target
+target = 'MathScore'
+
+X = df_encoded[features]
+y = df_encoded[target]
+
+# 2. Train-Test Split
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# 3. Feature Engineering: Interaction Terms and Polynomials
+poly = PolynomialFeatures(degree=2, interaction_only=True, include_bias=False)  # Create interaction terms
+X_train_interact = poly.fit_transform(X_train) #Fit and transform on the train set
+X_test_interact = poly.transform(X_test)  # Transform the test set
+#get the names after the transformation
+feature_names = poly.get_feature_names_out(input_features=X_train.columns)
+
+# Convert to DataFrame and label columns
+X_train_interact = pd.DataFrame(X_train_interact, columns=feature_names)
+X_test_interact = pd.DataFrame(X_test_interact, columns=feature_names)
+# Add NrSiblings^2 (Manually)
+X_train_interact['NrSiblings_squared'] = X_train_interact['NrSiblings'] ** 2
+X_test_interact['NrSiblings_squared'] = X_test_interact['NrSiblings'] ** 2
+
+# 4. Scaling (After Feature Engineering)
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train_interact)
+X_test_scaled = scaler.transform(X_test_interact)
+
+# 5. Hyperparameter Tuning with GridSearchCV (Ridge Regression)
+param_grid = {'alpha': [0.001, 0.01, 0.1, 1, 10, 100]}  # Range of alpha values to try
+ridge = Ridge()
+grid_search = GridSearchCV(ridge, param_grid, scoring='neg_mean_squared_error', cv=5, n_jobs=-1)  # Use 5-fold CV, use all cores
+grid_search.fit(X_train_scaled, y_train)
+
+print("Best parameters:", grid_search.best_params_)
+print("Best cross-validation score (negative MSE):", grid_search.best_score_)
+
+# 6. Train the Best Model
+best_model = grid_search.best_estimator_  # Get the best model from GridSearchCV
+
+# 7. Evaluate on Test Set
+y_pred = best_model.predict(X_test_scaled)
+mse = mean_squared_error(y_test, y_pred)
+r2 = r2_score(y_test, y_pred)
+print(f'Test MSE: {mse}')
+print(f'Test R-squared: {r2}')
+# --- Visualization Code (Bar chart, as before) ---
+plt.figure(figsize=(10, 6))
+bar_width = 0.35
+index = np.arange(len(y_test[:20]))
+
+plt.bar(index, y_test[:20], bar_width, label='Actual', color='blue')
+plt.bar(index + bar_width, y_pred[:20], bar_width, label='Predicted', color='red')
+
+plt.xlabel('Student Index')
+plt.ylabel('Math Score')
+plt.title('Comparison of Actual vs. Predicted Math Scores (First 20 Students)')
+plt.xticks(index + bar_width / 2, range(1, 21))
+plt.legend()
+plt.tight_layout()
+plt.show()
